@@ -74,16 +74,6 @@ class LIS2DW:
         self.mcu = mcu = self.bus.get_mcu()
         self.oid = oid = mcu.create_oid()
         self.query_lis2dw_cmd = None
-        msgformat = mcu._serial.msgparser.messages_by_name.get('config_lis2dw')
-        if msgformat and 'bus_oid_type' in msgformat.name_to_type:
-            mcu.add_config_cmd("config_lis2dw oid=%d bus_oid=%d bus_oid_type=%s "
-                               "lis_chip_type=%s" % (oid, self.bus.get_oid(),
-                                self.bus_type, self.lis_type))
-        else:
-            mcu.add_config_cmd("config_lis2dw oid=%d spi_oid=%d"
-                               % (oid, self.bus.get_oid()))
-        mcu.add_config_cmd("query_lis2dw oid=%d rest_ticks=0"
-                           % (oid,), on_restart=True)
         mcu.register_config_callback(self._build_config)
         # Bulk sample message reading
         chip_smooth = self.data_rate * BATCH_UPDATES * 2
@@ -98,6 +88,23 @@ class LIS2DW:
         self.batch_bulk.add_mux_endpoint("lis2dw/dump_lis2dw", "sensor",
                                          self.name, {'header': hdr})
     def _build_config(self):
+        # The MCU command dictionary is only available after identify, so
+        # select the config_lis2dw format here (not in __init__).
+        # Upstream Klipper 13 firmware uses bus_oid/bus_oid_type/lis_chip_type;
+        # the factory Flashforge eboard firmware uses spi_oid.
+        oid = self.oid
+        msgparser = self.mcu._serial.get_msgparser()
+        msgformat = msgparser.messages_by_name.get('config_lis2dw')
+        if msgformat is None or 'bus_oid_type' in msgformat.name_to_type:
+            self.mcu.add_config_cmd(
+                "config_lis2dw oid=%d bus_oid=%d bus_oid_type=%s "
+                "lis_chip_type=%s" % (oid, self.bus.get_oid(),
+                                      self.bus_type, self.lis_type))
+        else:
+            self.mcu.add_config_cmd("config_lis2dw oid=%d spi_oid=%d"
+                                    % (oid, self.bus.get_oid()))
+        self.mcu.add_config_cmd("query_lis2dw oid=%d rest_ticks=0"
+                                % (oid,), on_restart=True)
         cmdqueue = self.bus.get_command_queue()
         self.query_lis2dw_cmd = self.mcu.lookup_command(
             "query_lis2dw oid=%c rest_ticks=%u", cq=cmdqueue)
